@@ -1,0 +1,6 @@
+matplotlib==3.11.2
+numpy==2.5.3
+open3d==0.20.0
+opencv-python==5.0.0.93
+pillow==12.3.0
+pycolmap==4.2.0

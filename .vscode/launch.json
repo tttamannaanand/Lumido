@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    { "name": "Demo: open 3D viewer (lite cloud)", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/pipeline/view.py", "args": ["outputs/dense_cloud_lite.ply"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal" },
+    { "name": "Demo: depth map for one image (~15 s)", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/pipeline/step4_depth.py", "args": ["0287_0020"],
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal" },
+    { "name": "Demo: re-render screenshots", "type": "debugpy", "request": "launch",
+      "program": "${workspaceFolder}/pipeline/step6_render.py",
+      "cwd": "${workspaceFolder}", "console": "integratedTerminal" }
+  ]
+}

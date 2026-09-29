@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Lumido – Process Documentation</title>
+<style>
+  @page { size: A4; margin: 11mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: -apple-system, "Helvetica Neue", Arial, sans-serif; font-size: 8.6pt; line-height: 1.32; color: #1a1a1a; margin: 0; }
+  h1 { font-size: 14pt; margin: 0 0 1mm; color: #b4441a; }
+  .sub { color: #555; margin-bottom: 2.5mm; }
+  h2 { font-size: 9.6pt; margin: 2.6mm 0 1mm; color: #b4441a; border-bottom: 0.4pt solid #ddd; padding-bottom: 0.6mm; }
+  ol, ul { margin: 0; padding-left: 4.5mm; }
+  li { margin-bottom: 0.9mm; }
+  .cols { display: grid; grid-template-columns: 1.15fr 1fr; gap: 5mm; }
+  table { border-collapse: collapse; width: 100%; font-size: 8.2pt; }
+  td { padding: 0.5mm 1mm; border-bottom: 0.3pt solid #e4e4e4; vertical-align: top; }
+  td:first-child { color: #555; white-space: nowrap; }
+  img { width: 100%; border-radius: 1.5mm; margin-top: 1.5mm; }
+  code { font-family: Menlo, monospace; font-size: 7.8pt; background: #f3f3f3; padding: 0 0.6mm; border-radius: 0.6mm; }
+  b { font-weight: 600; }
+</style>
+</head>
+<body>
+<h1>Lumido — Lighthouse 3D Reconstruction</h1>
+<div class="sub">Pixel-Ops Trial Round &nbsp;·&nbsp; Team: <b>Halo</b> &nbsp;·&nbsp; Dataset: “Lighthouse” (200 senseFly albris images, 7152×5368, 3 flights) &nbsp;·&nbsp; Code: <code>pipeline/step1…step6</code>, run with <code>./run_all.sh</code></div>
+
+<div class="cols">
+<div>
+<h2>1. Approach / pipeline</h2>
+<ol>
+  <li><b>Preparation</b> — resize to 1600 px (fits 8 GB RAM); read EXIF GPS + focal length; convert focal mm → px from sensor pixel density (1282 px).</li>
+  <li><b>Features &amp; matching (own code)</b> — OpenCV SIFT, 8000 keypoints/image, RootSIFT descriptors. GPS-guided pair selection (8,342 of 19,900 pairs: orbit images all-vs-all, others within 70 m). FLANN 2-NN + Lowe ratio 0.8 + mutual check + Essential-matrix RANSAC (1 px) → <b>3,044 verified pairs</b>.</li>
+  <li><b>Structure-from-Motion</b> — our keypoints/matches loaded into pycolmap, used <i>as a backend library</i> for incremental registration (PnP) + bundle adjustment, refining focal length and radial distortion. Then a 7-DoF similarity fit of camera centres to GPS gives metric scale, Z up.</li>
+  <li><b>Depth maps (own plane-sweep MVS)</b> — per image: undistort, pick 5 neighbours (most shared points, 3–45° viewing angle), sweep 160 fronto-parallel planes (uniform in 1/depth); each plane warps neighbours by the homography <code>H = K(R + t nᵀ/d)K⁻¹</code>; cost = 1 − ZNCC (7×7), mean of best 2 neighbours (occlusion-robust); winner-take-all + parabolic sub-plane refinement; reject low-texture / high-cost pixels; speckle filter removes small blobs (moving water).</li>
+  <li><b>Fusion</b> — back-project every depth pixel to 3D, re-project into neighbours; keep points confirmed by ≥2 neighbours within 1 % depth, averaged over confirming views. Voxel merge (6 cm, batched), crop to survey area, statistical outlier removal → binary PLY.</li>
+  <li><b>Rendering</b> — own NumPy z-buffer point renderer (look-at cameras) for screenshots; Open3D viewer for live demo.</li>
+</ol>
+
+<h2>2. Libraries / tools</h2>
+<ul>
+  <li><b>OpenCV 5.0</b> — SIFT, FLANN, <code>findEssentialMat</code>, undistort, <code>warpPerspective</code>, box filters, <code>filterSpeckles</code></li>
+  <li><b>pycolmap 4.2</b> — backend only: incremental mapper, bundle adjustment, GPS similarity alignment. <i>Not used:</i> COLMAP GUI, its feature extraction/matching or dense MVS.</li>
+  <li><b>NumPy</b> (all geometry, fusion, renderer) · <b>Open3D 0.20</b> (outlier removal, viewer) · <b>Pillow</b> (EXIF) · <b>Matplotlib</b> (plots) · Python 3.14 on an Apple M3 laptop (CPU only).</li>
+</ul>
+</div>
+
+<div>
+<h2>3. Results</h2>
+<table>
+  <tr><td>Cameras registered</td><td><b>200 / 200</b> in one model</td></tr>
+  <tr><td>Sparse points</td><td>~104,000, mean reprojection error <b>0.91 px</b></td></tr>
+  <tr><td>Focal length</td><td>EXIF 1281.6 px → refined 1290.6 px (0.7 %)</td></tr>
+  <tr><td>GPS agreement</td><td>median <b>2.2 m</b> camera-to-GPS (drone GPS accuracy)</td></tr>
+  <tr><td>Depth maps</td><td>198 × (1200×900), in <code>outputs/depth_maps/</code></td></tr>
+  <tr><td>Dense cloud</td><td><b>25.1 M points</b>, 6 cm spacing, 261×156×36 m, <code>dense_cloud.ply</code></td></tr>
+  <tr><td>Runtime</td><td>≈ 45 min total on laptop CPU</td></tr>
+</table>
+<img src="../outputs/render_overview.png" alt="Renders of the reconstruction">
+
+<h2>4. Known limitations</h2>
+<ul>
+  <li><b>Sea is not reconstructed</b> — moving water breaks multi-view consistency; removed on purpose (texture/cost checks, speckle filter, fusion).</li>
+  <li><b>Vertical walls sparser than roofs/ground</b>; small holes under eaves and behind buildings — only 36 low oblique images see the façades.</li>
+  <li><b>Resolution trade-off</b> — depth computed at 1200×900 (~17 % of original pixels) to fit 8 GB RAM / CPU time; fine detail (railings, antenna) is thin.</li>
+  <li><b>Absolute position ±2 m</b> (consumer GPS); relative geometry is set by bundle adjustment (sub-pixel).</li>
+  <li>2 images got no depth map (fewer than 2 suitable neighbours); no mesh/texture step.</li>
+</ul>
+</div>
+</div>
+</body>
+</html>
