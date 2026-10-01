@@ -27,6 +27,7 @@ Output:
 
 Run:  .venv/bin/python pipeline/step2_match.py
 """
+
 import csv
 import itertools
 import multiprocessing as mp
@@ -43,12 +44,12 @@ FEAT_FILE = ROOT / "data" / "features.npz"
 MATCH_FILE = ROOT / "data" / "matches.npz"
 OUT_DIR = ROOT / "outputs"
 
-N_FEATURES = 8000       # max SIFT keypoints per image
-PAIR_RADIUS_M = 70      # compare two photos if taken within this horizontal distance
+N_FEATURES = 8000  # max SIFT keypoints per image
+PAIR_RADIUS_M = 70  # compare two photos if taken within this horizontal distance
 ORBIT_FLIGHTS = {"0285", "0287"}
-RATIO = 0.8             # Lowe's ratio test threshold
-RANSAC_PX = 1.0         # max reprojection error (pixels) for a match to count as an inlier
-MIN_INLIERS = 30        # pairs with fewer verified matches are dropped
+RATIO = 0.8  # Lowe's ratio test threshold
+RANSAC_PX = 1.0  # max reprojection error (pixels) for a match to count as an inlier
+MIN_INLIERS = 30  # pairs with fewer verified matches are dropped
 
 
 # ---------------------------------------------------------------- metadata ---
@@ -124,8 +125,7 @@ def match_pair(pair):
     # (d) geometric verification with the Essential matrix
     p1, p2 = kp1[m[:, 0], :2], kp2[m[:, 1], :2]
     K = G["K"]
-    E, mask = cv2.findEssentialMat(p1, p2, K, method=cv2.RANSAC,
-                                   prob=0.9999, threshold=RANSAC_PX)
+    E, mask = cv2.findEssentialMat(p1, p2, K, method=cv2.RANSAC, prob=0.9999, threshold=RANSAC_PX)
     if E is None or mask is None:
         return i, j, None
     inliers = m[mask.ravel().astype(bool)]
@@ -145,7 +145,11 @@ def draw_matches(name1, name2, kp1, kp2, matches, out_path, max_lines=300):
     canvas = np.hstack([img1, img2])
     w = img1.shape[1]
     rng = np.random.default_rng(0)
-    pick = matches if len(matches) <= max_lines else matches[rng.choice(len(matches), max_lines, replace=False)]
+    pick = (
+        matches
+        if len(matches) <= max_lines
+        else matches[rng.choice(len(matches), max_lines, replace=False)]
+    )
     for a, b in pick:
         x1, y1 = kp1[a, :2]
         x2, y2 = kp2[b, :2]
@@ -153,9 +157,19 @@ def draw_matches(name1, name2, kp1, kp2, matches, out_path, max_lines=300):
         cv2.line(canvas, (int(x1), int(y1)), (int(x2) + w, int(y2)), color, 1, cv2.LINE_AA)
         cv2.circle(canvas, (int(x1), int(y1)), 3, color, -1)
         cv2.circle(canvas, (int(x2) + w, int(y2)), 3, color, -1)
-    cv2.putText(canvas, f"{name1}  <->  {name2}   {len(matches)} verified matches",
-                (20, 45), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (255, 255, 255), 3, cv2.LINE_AA)
-    cv2.imwrite(str(out_path), cv2.resize(canvas, None, fx=0.6, fy=0.6), [cv2.IMWRITE_JPEG_QUALITY, 90])
+    cv2.putText(
+        canvas,
+        f"{name1}  <->  {name2}   {len(matches)} verified matches",
+        (20, 45),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        1.2,
+        (255, 255, 255),
+        3,
+        cv2.LINE_AA,
+    )
+    cv2.imwrite(
+        str(out_path), cv2.resize(canvas, None, fx=0.6, fy=0.6), [cv2.IMWRITE_JPEG_QUALITY, 90]
+    )
 
 
 # -------------------------------------------------------------------- main ---
@@ -171,13 +185,18 @@ def main():
 
     print(f"1) Extracting SIFT features from {len(names)} images")
     kps, desc = extract_features(names)
-    np.savez_compressed(FEAT_FILE, names=np.array(names),
-                        **{f"kp_{k}": kps[k] for k in range(len(names))},
-                        **{f"desc_{k}": desc[k].astype(np.float16) for k in range(len(names))})
+    np.savez_compressed(
+        FEAT_FILE,
+        names=np.array(names),
+        **{f"kp_{k}": kps[k] for k in range(len(names))},
+        **{f"desc_{k}": desc[k].astype(np.float16) for k in range(len(names))},
+    )
     print(f"   done in {time.time() - t0:.0f}s")
 
     pairs = select_pairs(rows, xy)
-    print(f"2) Selected {len(pairs)} image pairs out of {len(names) * (len(names) - 1) // 2} possible")
+    print(
+        f"2) Selected {len(pairs)} image pairs out of {len(names) * (len(names) - 1) // 2} possible"
+    )
 
     print("3) Matching pairs (ratio test + mutual check + Essential-matrix RANSAC)")
     G.update(kps=kps, desc=desc, K=K)
@@ -189,11 +208,15 @@ def main():
             if inl is not None:
                 results[(i, j)] = inl
             if n % 500 == 0 or n == len(pairs):
-                print(f"   {n}/{len(pairs)} pairs  ->  {len(results)} verified  ({time.time() - t1:.0f}s)")
+                print(
+                    f"   {n}/{len(pairs)} pairs  ->  {len(results)} verified  ({time.time() - t1:.0f}s)"
+                )
 
-    np.savez_compressed(MATCH_FILE,
-                        pairs=np.array(list(results.keys()), dtype=np.int32).reshape(-1, 2),
-                        **{f"m_{i}_{j}": v for (i, j), v in results.items()})
+    np.savez_compressed(
+        MATCH_FILE,
+        pairs=np.array(list(results.keys()), dtype=np.int32).reshape(-1, 2),
+        **{f"m_{i}_{j}": v for (i, j), v in results.items()},
+    )
 
     # ---- stats: how well connected is each image? ----
     degree = np.zeros(len(names), int)
@@ -201,15 +224,21 @@ def main():
         degree[i] += 1
         degree[j] += 1
     isolated = [names[k] for k in range(len(names)) if degree[k] == 0]
-    print(f"\n4) Verified pairs: {len(results)}   "
-          f"median matches per pair: {int(np.median([len(v) for v in results.values()]))}")
+    print(
+        f"\n4) Verified pairs: {len(results)}   "
+        f"median matches per pair: {int(np.median([len(v) for v in results.values()]))}"
+    )
     for flight in ["0283", "0285", "0287"]:
         ks = [k for k, r in enumerate(rows) if r["flight"] == flight]
-        print(f"   flight {flight}: avg {degree[ks].mean():.1f} matched partners per image, "
-              f"{sum(degree[k] == 0 for k in ks)} images with none")
+        print(
+            f"   flight {flight}: avg {degree[ks].mean():.1f} matched partners per image, "
+            f"{sum(degree[k] == 0 for k in ks)} images with none"
+        )
     if isolated:
-        print(f"   {len(isolated)} images matched nothing (probably open water): "
-              + ", ".join(n.split('_', 1)[1] for n in isolated))
+        print(
+            f"   {len(isolated)} images matched nothing (probably open water): "
+            + ", ".join(n.split("_", 1)[1] for n in isolated)
+        )
 
     # ---- pictures: best pair inside each orbit flight, and best orbit<->nadir pair ----
     def best(filter_fn):
@@ -224,7 +253,9 @@ def main():
     }
     for fname, p in examples.items():
         if p:
-            draw_matches(names[p[0]], names[p[1]], kps[p[0]], kps[p[1]], results[p], OUT_DIR / fname)
+            draw_matches(
+                names[p[0]], names[p[1]], kps[p[0]], kps[p[1]], results[p], OUT_DIR / fname
+            )
             print(f"   saved outputs/{fname}")
     print(f"\nTotal time {time.time() - t0:.0f}s")
 
