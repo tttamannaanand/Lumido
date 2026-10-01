@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lumido 3D Viewer</title>
+<meta name="description" content="Interactive 3D point cloud of a lighthouse, reconstructed from 200 drone photos by the Lumido photogrammetry pipeline.">
+<style>
+  :root { --bg: #1c1c20; --panel: rgba(20, 20, 24, 0.82); --text: #ececf0; --muted: #9a9aa6; --accent: #f2c14e; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 14px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; overflow: hidden; }
+  canvas { display: block; touch-action: none; }
+  .panel { position: fixed; left: 16px; top: 16px; max-width: min(360px, calc(100vw - 32px));
+    background: var(--panel); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,.08);
+    border-radius: 12px; padding: 14px 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px; }
+  h1 span { color: var(--accent); }
+  p { margin: 0 0 10px; color: var(--muted); }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0 0 10px; }
+  dt { color: var(--muted); } dd { margin: 0; font-variant-numeric: tabular-nums; }
+  a { color: var(--accent); }
+  .hint { position: fixed; right: 16px; bottom: 16px; color: var(--muted); font-size: 12px;
+    background: var(--panel); padding: 6px 10px; border-radius: 8px; }
+  #loading { position: fixed; inset: 0; display: grid; place-items: center; pointer-events: none; }
+  .bar { width: 220px; height: 4px; background: rgba(255,255,255,.1); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+  button { background: transparent; color: var(--text); border: 1px solid rgba(255,255,255,.2);
+    border-radius: 6px; padding: 4px 10px; font: inherit; cursor: pointer; margin-right: 6px; }
+  button:hover { border-color: var(--accent); }
+  @media (max-width: 560px) { .panel dl, .panel p { display: none; } .hint { display: none; } }
+</style>
+</head>
+<body>
+<div class="panel">
+  <h1><span>Lumido</span> · Lighthouse</h1>
+  <p>Reconstructed from 200 drone photos with our own feature matching, plane-sweep stereo and fusion.</p>
+  <dl>
+    <dt>Cameras</dt><dd>200 / 200 registered</dd>
+    <dt>Reprojection</dt><dd>0.91 px</dd>
+    <dt>Full cloud</dt><dd>25.1 M points @ 6 cm</dd>
+    <dt>Shown here</dt><dd id="shown">loading…</dd>
+    <dt>Extent</dt><dd>261 × 156 × 36 m</dd>
+  </dl>
+  <button id="reset">Reset view</button><button id="spin">Auto-rotate: on</button>
+  <p style="margin:10px 0 0"><a href="https://github.com/tttamannaanand/Lumido">Source on GitHub →</a></p>
+</div>
+<div class="hint">Drag to orbit · scroll to zoom · right-drag to pan</div>
+<div id="loading"><div>Loading point cloud… <span id="pct">0%</span><div class="bar"><i id="barfill"></i></div></div></div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { PLYLoader } from 'three/addons/loaders/PLYLoader.js';
+
+THREE.Object3D.DEFAULT_UP.set(0, 0, 1); // the cloud is in East-North-Up metres
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.body.prepend(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1c1c20);
+const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 0.5, 3000);
+const HOME = new THREE.Vector3(115, -125, 85);
+camera.position.copy(HOME);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 10);
+controls.enableDamping = true;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 0.6;
+controls.maxPolarAngle = Math.PI * 0.49;
+
+const pct = document.getElementById('pct');
+const bar = document.getElementById('barfill');
+
+new PLYLoader().load('lighthouse.ply', (geom) => {
+  const n = geom.attributes.position.count;
+  const mat = new THREE.PointsMaterial({ size: 0.38, vertexColors: true, sizeAttenuation: true });
+  scene.add(new THREE.Points(geom, mat));
+  document.getElementById('shown').textContent = `${(n / 1e6).toFixed(2)} M points @ 25 cm`;
+  document.getElementById('loading').remove();
+}, (e) => {
+  if (!e.total) return;
+  const p = Math.round((100 * e.loaded) / e.total);
+  pct.textContent = `${p}%`;
+  bar.style.width = `${p}%`;
+}, () => { pct.textContent = 'failed to load'; });
+
+document.getElementById('reset').onclick = () => { camera.position.copy(HOME); controls.target.set(0, 0, 10); };
+const spinBtn = document.getElementById('spin');
+spinBtn.onclick = () => {
+  controls.autoRotate = !controls.autoRotate;
+  spinBtn.textContent = `Auto-rotate: ${controls.autoRotate ? 'on' : 'off'}`;
+};
+controls.addEventListener('start', () => {
+  if (controls.autoRotate) spinBtn.click();
+});
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+renderer.setAnimationLoop(() => { controls.update(); renderer.render(scene, camera); });
+</script>
+</body>
+</html>
