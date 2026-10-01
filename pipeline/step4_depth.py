@@ -35,6 +35,7 @@ Output:
 Run:  .venv/bin/python pipeline/step4_depth.py            (all images)
       .venv/bin/python pipeline/step4_depth.py 0287_0020  (just one, for testing)
 """
+
 import multiprocessing as mp
 import sys
 import time
@@ -50,17 +51,17 @@ MODEL_DIR = ROOT / "data" / "sfm" / "model"
 DEPTH_DIR = ROOT / "data" / "depth"
 VIS_DIR = ROOT / "outputs" / "depth_maps"
 
-DEPTH_SCALE = 0.75       # compute depth at 75% of the 1600 px working size (1200 x 900)
-N_PLANES = 160           # number of depth hypotheses
-N_NEIGHBOURS = 5         # neighbour images used per reference image
-BEST_K = 2               # average the best K neighbour scores per plane (occlusion handling)
-WINDOW = 7               # ZNCC window size in pixels
-MIN_ANGLE, MAX_ANGLE = 3.0, 45.0   # accepted viewing-angle range for neighbours (degrees)
-MAX_COST = 0.5           # reject pixels whose best cost (1 - ZNCC) is above this
-MIN_TEXTURE = 4.0        # reject pixels whose local intensity std-dev is below this (grey levels)
-SPECKLE_AREA = 600       # connected depth regions smaller than this (pixels) are removed
-SPECKLE_PLANES = 2       # neighbouring pixels belong to one region if within this many planes
-N_WORKERS = 4            # images processed in parallel (limited by 8 GB RAM)
+DEPTH_SCALE = 0.75  # compute depth at 75% of the 1600 px working size (1200 x 900)
+N_PLANES = 160  # number of depth hypotheses
+N_NEIGHBOURS = 5  # neighbour images used per reference image
+BEST_K = 2  # average the best K neighbour scores per plane (occlusion handling)
+WINDOW = 7  # ZNCC window size in pixels
+MIN_ANGLE, MAX_ANGLE = 3.0, 45.0  # accepted viewing-angle range for neighbours (degrees)
+MAX_COST = 0.5  # reject pixels whose best cost (1 - ZNCC) is above this
+MIN_TEXTURE = 4.0  # reject pixels whose local intensity std-dev is below this (grey levels)
+SPECKLE_AREA = 600  # connected depth regions smaller than this (pixels) are removed
+SPECKLE_PLANES = 2  # neighbouring pixels belong to one region if within this many planes
+N_WORKERS = 4  # images processed in parallel (limited by 8 GB RAM)
 
 
 # ------------------------------------------------------------ scene set-up ---
@@ -105,13 +106,23 @@ def load_scene():
                 continue
             centre_pt = np.median(np.array([xyz[p] for p in shared]), axis=0)
             a, b = centres[r] - centre_pt, centres[n] - centre_pt
-            angle = np.degrees(np.arccos(np.clip(a @ b / np.linalg.norm(a) / np.linalg.norm(b), -1, 1)))
+            angle = np.degrees(
+                np.arccos(np.clip(a @ b / np.linalg.norm(a) / np.linalg.norm(b), -1, 1))
+            )
             if MIN_ANGLE <= angle <= MAX_ANGLE:
                 scores.append((len(shared), n))
         neighbours.append([n for _, n in sorted(scores, reverse=True)[:N_NEIGHBOURS]])
 
-    return dict(names=names, K=K, K_full=K_full, k1=k1, R=R, t=t,
-                neighbours=neighbours, depth_range=np.array(depth_range))
+    return dict(
+        names=names,
+        K=K,
+        K_full=K_full,
+        k1=k1,
+        R=R,
+        t=t,
+        neighbours=neighbours,
+        depth_range=np.array(depth_range),
+    )
 
 
 def load_undistorted(name, scene, colour=False):
@@ -126,11 +137,13 @@ def plane_sweep(r, scene):
     K, Kinv = scene["K"], np.linalg.inv(scene["K"])
     ref = load_undistorted(scene["names"][r], scene)
     h, w = ref.shape
-    box = lambda x: cv2.boxFilter(x, -1, (WINDOW, WINDOW))
+
+    def box(x):
+        return cv2.boxFilter(x, -1, (WINDOW, WINDOW))
 
     mean_r = box(ref)
-    var_r = box(ref * ref) - mean_r ** 2
-    textured = var_r > MIN_TEXTURE ** 2
+    var_r = box(ref * ref) - mean_r**2
+    textured = var_r > MIN_TEXTURE**2
 
     nbrs = scene["neighbours"][r]
     srcs = [load_undistorted(scene["names"][n], scene) for n in nbrs]
@@ -143,29 +156,33 @@ def plane_sweep(r, scene):
 
     d_near, d_far = scene["depth_range"][r]
     inv_depths = np.linspace(1 / d_near, 1 / d_far, N_PLANES)  # even steps in 1/depth
-    normal = np.array([0, 0, 1.0])                              # planes face the camera
+    normal = np.array([0, 0, 1.0])  # planes face the camera
 
     ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
-    pix = np.stack([xs.ravel(), ys.ravel(), np.ones(h * w, np.float32)])   # 3 x (h*w)
+    pix = np.stack([xs.ravel(), ys.ravel(), np.ones(h * w, np.float32)])  # 3 x (h*w)
 
     cost_volume = np.empty((N_PLANES, h, w), np.float16)
     for p, inv_d in enumerate(inv_depths):
         costs = []
-        for src, (R_rel, t_rel) in zip(srcs, rel):
+        for src, (R_rel, t_rel) in zip(srcs, rel, strict=True):
             # Homography induced by the plane z = d:  H = K (R + t n^T / d) K^-1
             H = K @ (R_rel + np.outer(t_rel, normal) * inv_d) @ Kinv
-            warped = cv2.warpPerspective(src, H, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP)
+            warped = cv2.warpPerspective(
+                src, H, (w, h), flags=cv2.INTER_LINEAR | cv2.WARP_INVERSE_MAP
+            )
             # pixels that map outside the neighbour image can't be scored
             q = H @ pix
             qx, qy = q[0] / q[2], q[1] / q[2]
-            inside = ((q[2] > 0) & (qx >= 0) & (qx < w - 1) & (qy >= 0) & (qy < h - 1)).reshape(h, w)
+            inside = ((q[2] > 0) & (qx >= 0) & (qx < w - 1) & (qy >= 0) & (qy < h - 1)).reshape(
+                h, w
+            )
 
             mean_w = box(warped)
-            var_w = box(warped * warped) - mean_w ** 2
+            var_w = box(warped * warped) - mean_w**2
             cov = box(ref * warped) - mean_r * mean_w
             zncc = cov / np.sqrt(np.maximum(var_r * var_w, 1e-6))
-            c = 1.0 - zncc                                   # 0 = perfect match, 2 = opposite
-            c[~inside | (var_w < MIN_TEXTURE ** 2)] = 2.0
+            c = 1.0 - zncc  # 0 = perfect match, 2 = opposite
+            c[~inside | (var_w < MIN_TEXTURE**2)] = 2.0
             costs.append(c)
         costs = np.sort(np.stack(costs), axis=0)[:BEST_K].mean(axis=0)
         cost_volume[p] = costs
@@ -209,12 +226,23 @@ def save_visual(r, scene, depth):
     if valid.any():
         lo, hi = np.percentile(depth[valid], [2, 98])
         norm = np.clip((depth - lo) / max(hi - lo, 1e-6), 0, 1)
-        vis = cv2.applyColorMap((255 * (1 - norm)).astype(np.uint8), cv2.COLORMAP_TURBO)  # red = near
+        vis = cv2.applyColorMap(
+            (255 * (1 - norm)).astype(np.uint8), cv2.COLORMAP_TURBO
+        )  # red = near
         vis[~valid] = 0
         cv2.putText(vis, f"{lo:.0f} m", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
-        cv2.putText(vis, f"red = near ... blue = far ({hi:.0f} m)", (10, 50),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
-    cv2.imwrite(str(VIS_DIR / scene["names"][r]), np.hstack([colour, vis]), [cv2.IMWRITE_JPEG_QUALITY, 85])
+        cv2.putText(
+            vis,
+            f"red = near ... blue = far ({hi:.0f} m)",
+            (10, 50),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            2,
+        )
+    cv2.imwrite(
+        str(VIS_DIR / scene["names"][r]), np.hstack([colour, vis]), [cv2.IMWRITE_JPEG_QUALITY, 85]
+    )
 
 
 # ------------------------------------------------------------------- main ---
@@ -226,7 +254,9 @@ def process(r):
     t0 = time.time()
     depth, cost = plane_sweep(r, SCENE)
     name = SCENE["names"][r]
-    np.savez_compressed(DEPTH_DIR / (Path(name).stem + ".npz"), depth=depth, cost=cost.astype(np.float16))
+    np.savez_compressed(
+        DEPTH_DIR / (Path(name).stem + ".npz"), depth=depth, cost=cost.astype(np.float16)
+    )
     save_visual(r, SCENE, depth)
     return name, (depth > 0).mean(), time.time() - t0
 
@@ -237,9 +267,15 @@ def main():
     t0 = time.time()
     print("1) Loading SfM model, choosing neighbours and depth ranges")
     SCENE.update(load_scene())
-    np.savez(DEPTH_DIR / "scene.npz", names=np.array(SCENE["names"]), K=SCENE["K"],
-             R=SCENE["R"], t=SCENE["t"], depth_range=SCENE["depth_range"],
-             neighbours=np.array([nb + [-1] * (N_NEIGHBOURS - len(nb)) for nb in SCENE["neighbours"]]))
+    np.savez(
+        DEPTH_DIR / "scene.npz",
+        names=np.array(SCENE["names"]),
+        K=SCENE["K"],
+        R=SCENE["R"],
+        t=SCENE["t"],
+        depth_range=SCENE["depth_range"],
+        neighbours=np.array([nb + [-1] * (N_NEIGHBOURS - len(nb)) for nb in SCENE["neighbours"]]),
+    )
     todo = list(range(len(SCENE["names"])))
     if len(sys.argv) > 1:  # test mode: only images whose name contains the argument
         todo = [k for k in todo if sys.argv[1] in SCENE["names"][k]]

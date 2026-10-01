@@ -2,6 +2,13 @@
 
 **Pixel Ops hackathon — photogrammetry, drone 3D reconstruction.**
 
+[![CI](https://github.com/tttamannaanand/Lumido/actions/workflows/ci.yml/badge.svg)](https://github.com/tttamannaanand/Lumido/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Python](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
+![OpenCV](https://img.shields.io/badge/OpenCV-SIFT%20·%20RANSAC-5C3EE8?logo=opencv&logoColor=white)
+
+> **At a glance:** 200 drone photos → 200/200 cameras registered → 0.91 px reprojection error → **25.1 M-point** coloured cloud at 6 cm spacing, in real-world metres. Feature matching, plane-sweep stereo, fusion and rendering are written from scratch.
+
 Pixel-Ops Trial Round. Lumido is a photogrammetry pipeline that turns the 200-image "Lighthouse" drone dataset into
 depth maps and a dense, coloured 3D point cloud in real-world metres.
 
@@ -58,6 +65,16 @@ Each step can also be run on its own, e.g. `.venv/bin/python pipeline/step4_dept
 Interactive 3D viewer: `.venv/bin/python pipeline/view.py outputs/dense_cloud_lite.ply`
 (left-drag rotate, scroll zoom, shift-drag pan).
 
+## Tests
+
+```bash
+pip install -r requirements-dev.txt
+pytest -q          # 13 tests: GPS/EXIF maths, pair selection, voxel fusion, PLY format, renderer z-buffer
+ruff check . && ruff format --check .
+```
+
+The tests run without the 200 source images: they check the geometry with hand-computed cases, and confirm the committed point cloud is a well-formed 3.2 M-point PLY. CI runs them on every push and pull request.
+
 ## Rules compliance
 
 - No ready-made point-cloud software (no COLMAP GUI, Meshroom, Metashape, ODM, …).
@@ -69,3 +86,7 @@ Interactive 3D viewer: `.venv/bin/python pipeline/view.py outputs/dense_cloud_li
 
 See `docs/Process_Documentation.pdf`: sea not reconstructed (moving water), walls sparser than
 roofs, depth at reduced resolution for an 8 GB laptop, ±2 m absolute position from consumer GPS.
+
+## License
+
+Code is [MIT](LICENSE). The Lighthouse images belong to the Pixel Ops organisers and aren't included.

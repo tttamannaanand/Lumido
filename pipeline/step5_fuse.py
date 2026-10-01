@@ -25,6 +25,7 @@ Output:
 
 Run:  .venv/bin/python pipeline/step5_fuse.py
 """
+
 import time
 from pathlib import Path
 
@@ -38,13 +39,13 @@ IMG_DIR = ROOT / "data" / "images"
 MODEL_DIR = ROOT / "data" / "sfm" / "model"
 DEPTH_DIR = ROOT / "data" / "depth"
 OUT_FILE = ROOT / "outputs" / "dense_cloud.ply"
-LITE_FILE = ROOT / "outputs" / "dense_cloud_lite.ply"   # smaller copy for quick viewing
+LITE_FILE = ROOT / "outputs" / "dense_cloud_lite.ply"  # smaller copy for quick viewing
 LITE_VOXEL = 0.15
 
-REL_TOL = 0.01        # neighbour depth must agree within 1 %
-MIN_CONFIRM = 2       # number of neighbours that must confirm a point
-VOXEL = 0.06          # metres: final point spacing
-CROP_MARGIN = 25      # metres around the camera footprint to keep
+REL_TOL = 0.01  # neighbour depth must agree within 1 %
+MIN_CONFIRM = 2  # number of neighbours that must confirm a point
+VOXEL = 0.06  # metres: final point spacing
+CROP_MARGIN = 25  # metres around the camera footprint to keep
 OUTLIER_NB, OUTLIER_STD = 20, 2.0
 
 
@@ -64,9 +65,11 @@ def voxel_reduce(pts, cols):
 def write_ply(path, pts, cols):
     """Binary PLY: x, y, z as 32-bit floats + red, green, blue as bytes (15 bytes per point).
     Readable by Open3D, CloudCompare, MeshLab, Blender."""
-    header = (f"ply\nformat binary_little_endian 1.0\nelement vertex {len(pts)}\n"
-              "property float x\nproperty float y\nproperty float z\n"
-              "property uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n")
+    header = (
+        f"ply\nformat binary_little_endian 1.0\nelement vertex {len(pts)}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "property uchar red\nproperty uchar green\nproperty uchar blue\nend_header\n"
+    )
     rec = np.empty(len(pts), dtype=[("xyz", "<f4", 3), ("rgb", "u1", 3)])
     rec["xyz"] = pts
     rec["rgb"] = np.clip(np.asarray(cols) * 255, 0, 255).astype(np.uint8)
@@ -95,17 +98,16 @@ def main():
         if p.exists():
             depths[k] = np.load(p)["depth"]
     h, w = next(iter(depths.values())).shape
-    scale = w / cam.width
     print(f"   {len(depths)} depth maps of {w}x{h}")
 
     ys, xs = np.mgrid[0:h, 0:w]
-    rays = np.stack([xs.ravel(), ys.ravel(), np.ones(h * w)]) .astype(np.float64)
-    rays = (Kinv @ rays).T                                    # (h*w, 3) pixel -> camera ray
+    rays = np.stack([xs.ravel(), ys.ravel(), np.ones(h * w)]).astype(np.float64)
+    rays = (Kinv @ rays).T  # (h*w, 3) pixel -> camera ray
 
     def backproject(k, idx):
         """World points for pixels idx (flat indices) of image k."""
         X_cam = rays[idx] * depths[k].ravel()[idx, None]
-        return (X_cam - t[k]) @ R[k]                         # = R^T (X_cam - t)
+        return (X_cam - t[k]) @ R[k]  # = R^T (X_cam - t)
 
     print("2) Multi-view consistency check")
     all_pts, all_cols = [], []
@@ -114,13 +116,13 @@ def main():
         if len(idx) == 0:
             continue
         X = backproject(r, idx)
-        acc = X.copy()                     # running sum of confirming 3D positions
-        count = np.zeros(len(idx), int)    # how many neighbours confirmed
+        acc = X.copy()  # running sum of confirming 3D positions
+        count = np.zeros(len(idx), int)  # how many neighbours confirmed
 
         for n in neighbours[r]:
             if n not in depths:
                 continue
-            Xn = X @ R[n].T + t[n]         # point in neighbour camera coordinates
+            Xn = X @ R[n].T + t[n]  # point in neighbour camera coordinates
             z = Xn[:, 2]
             uvw = Xn @ K.T
             u = np.round(uvw[:, 0] / np.maximum(uvw[:, 2], 1e-9)).astype(int)
@@ -140,7 +142,7 @@ def main():
         colour = cv2.imread(str(IMG_DIR / names[r]))
         colour = cv2.undistort(colour, K_full, np.array([k1, 0, 0, 0]))
         colour = cv2.resize(colour, (w, h), interpolation=cv2.INTER_AREA)
-        cols = colour.reshape(-1, 3)[idx[keep], ::-1] / 255.0   # BGR -> RGB
+        cols = colour.reshape(-1, 3)[idx[keep], ::-1] / 255.0  # BGR -> RGB
 
         all_pts.append(pts.astype(np.float32))
         all_cols.append(cols.astype(np.float32))
@@ -149,8 +151,10 @@ def main():
             all_pts, all_cols = [merged[0]], [merged[1]]
         if done % 20 == 0 or done == len(depths):
             total = sum(len(p) for p in all_pts)
-            print(f"   {done}/{len(depths)} images, {total / 1e6:.1f} M points after merging duplicates "
-                  f"({time.time() - t0:.0f}s)")
+            print(
+                f"   {done}/{len(depths)} images, {total / 1e6:.1f} M points after merging duplicates "
+                f"({time.time() - t0:.0f}s)"
+            )
 
     pts, cols = voxel_reduce(np.concatenate(all_pts), np.concatenate(all_cols))
     del all_pts, all_cols
@@ -160,7 +164,9 @@ def main():
     centres = np.array([-R[k].T @ t[k] for k in range(len(names))])
     lo = centres.min(axis=0) - CROP_MARGIN
     hi = centres.max(axis=0) + CROP_MARGIN
-    inside = np.all((pts[:, :2] >= lo[:2]) & (pts[:, :2] <= hi[:2]), axis=1) & (pts[:, 2] < centres[:, 2].min())
+    inside = np.all((pts[:, :2] >= lo[:2]) & (pts[:, :2] <= hi[:2]), axis=1) & (
+        pts[:, 2] < centres[:, 2].min()
+    )
     pts, cols = pts[inside], cols[inside]
     print(f"   crop to survey area: {inside.sum() / 1e6:.1f} M points kept")
 
@@ -176,10 +182,14 @@ def main():
     write_ply(LITE_FILE, np.asarray(lite.points, np.float32), np.asarray(lite.colors, np.float32))
 
     ext = pts.max(axis=0) - pts.min(axis=0)
-    print(f"\nSaved {OUT_FILE.relative_to(ROOT)}: {len(pts):,} points "
-          f"({OUT_FILE.stat().st_size / 1e6:.0f} MB), extent {ext[0]:.0f} x {ext[1]:.0f} x {ext[2]:.0f} m")
-    print(f"Saved {LITE_FILE.relative_to(ROOT)}: {len(lite.points):,} points "
-          f"({LITE_FILE.stat().st_size / 1e6:.0f} MB)")
+    print(
+        f"\nSaved {OUT_FILE.relative_to(ROOT)}: {len(pts):,} points "
+        f"({OUT_FILE.stat().st_size / 1e6:.0f} MB), extent {ext[0]:.0f} x {ext[1]:.0f} x {ext[2]:.0f} m"
+    )
+    print(
+        f"Saved {LITE_FILE.relative_to(ROOT)}: {len(lite.points):,} points "
+        f"({LITE_FILE.stat().st_size / 1e6:.0f} MB)"
+    )
     print(f"Total {(time.time() - t0) / 60:.1f} min")
 
 

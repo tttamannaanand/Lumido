@@ -32,11 +32,13 @@ Output:
 
 Run:  .venv/bin/python pipeline/step3_sfm.py
 """
+
 import csv
 import shutil
 from pathlib import Path
 
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
@@ -76,8 +78,13 @@ def build_database(rows, feats, matches):
     opts = pycolmap.ImageReaderOptions()
     opts.camera_model = "SIMPLE_RADIAL"
     opts.camera_params = f"{f},{w / 2},{h / 2},0"
-    pycolmap.import_images(DB_PATH, IMG_DIR, pycolmap.CameraMode.SINGLE,
-                           image_names=[r["name"] for r in rows], options=opts)
+    pycolmap.import_images(
+        DB_PATH,
+        IMG_DIR,
+        pycolmap.CameraMode.SINGLE,
+        image_names=[r["name"] for r in rows],
+        options=opts,
+    )
 
     db = pycolmap.Database.open(DB_PATH)
     name_to_id = {img.name: img.image_id for img in db.read_all_images()}
@@ -117,8 +124,8 @@ def main():
 
     print("3) Incremental Structure-from-Motion (this is the slow part)")
     opts = pycolmap.IncrementalPipelineOptions()
-    opts.ba_refine_focal_length = True     # let bundle adjustment fine-tune our EXIF focal
-    opts.ba_refine_extra_params = True     # ...and the lens distortion
+    opts.ba_refine_focal_length = True  # let bundle adjustment fine-tune our EXIF focal
+    opts.ba_refine_extra_params = True  # ...and the lens distortion
     opts.min_model_size = 10
     models = pycolmap.incremental_mapping(DB_PATH, IMG_DIR, SFM_DIR / "raw_models", opts)
     if not models:
@@ -134,16 +141,22 @@ def main():
     ransac = pycolmap.RANSACOptions()
     ransac.max_error = 5.0  # metres; consumer drone GPS is only accurate to a few metres
     sim3 = pycolmap.align_reconstruction_to_locations(
-        rec, reg_names, np.array([name_to_enu[n] for n in reg_names]),
-        min_common_images=3, ransac_options=ransac)
+        rec,
+        reg_names,
+        np.array([name_to_enu[n] for n in reg_names]),
+        min_common_images=3,
+        ransac_options=ransac,
+    )
     if sim3 is None:
         print("   WARNING: GPS alignment failed, keeping arbitrary scale")
     else:
         rec.transform(sim3)
         centres = {img.name: img.projection_center() for img in rec.images.values()}
         err = np.array([np.linalg.norm(centres[n] - name_to_enu[n]) for n in reg_names])
-        print(f"   scale factor {sim3.scale:.3f}; camera-to-GPS distance "
-              f"median {np.median(err):.2f} m, max {err.max():.2f} m")
+        print(
+            f"   scale factor {sim3.scale:.3f}; camera-to-GPS distance "
+            f"median {np.median(err):.2f} m, max {err.max():.2f} m"
+        )
 
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     rec.write(MODEL_DIR)
@@ -159,11 +172,15 @@ def main():
         print(f"      flight {flight}: {got}/{total}")
     print(f"   sparse 3D points  : {rec.num_points3D()}")
     print(f"   mean reprojection error: {rec.compute_mean_reprojection_error():.3f} px")
-    print(f"   refined camera: focal {cam.params[0]:.1f} px (EXIF said {float(rows[0]['focal_px']):.1f}), "
-          f"k1 {cam.params[3]:.4f}")
+    print(
+        f"   refined camera: focal {cam.params[0]:.1f} px (EXIF said {float(rows[0]['focal_px']):.1f}), "
+        f"k1 {cam.params[3]:.4f}"
+    )
     missing = sorted(set(r["name"] for r in rows) - set(reg_names))
     if missing:
-        print(f"   not registered ({len(missing)}): " + ", ".join(n.split('_', 1)[1] for n in missing))
+        print(
+            f"   not registered ({len(missing)}): " + ", ".join(n.split("_", 1)[1] for n in missing)
+        )
 
     # ---- top-down plot ----
     pts = np.array([p.xyz for p in rec.points3D.values()])
@@ -172,8 +189,13 @@ def main():
     ax.scatter(pts[:, 0], pts[:, 1], c=cols, s=0.5)
     colours = {"0283": "tab:blue", "0285": "tab:orange", "0287": "tab:red"}
     for flight, c in colours.items():
-        cs = np.array([img.projection_center() for img in rec.images.values()
-                       if img.name.split("_")[1] == flight])
+        cs = np.array(
+            [
+                img.projection_center()
+                for img in rec.images.values()
+                if img.name.split("_")[1] == flight
+            ]
+        )
         if len(cs):
             ax.scatter(cs[:, 0], cs[:, 1], c=c, s=25, marker="^", label=f"cameras {flight}")
     # Crop the view: angled photos also see far-off rocks on the horizon
@@ -184,7 +206,9 @@ def main():
     ax.set_aspect("equal")
     ax.set_xlabel("East (m)")
     ax.set_ylabel("North (m)")
-    ax.set_title(f"Structure-from-Motion: {rec.num_reg_images()} cameras, {rec.num_points3D()} points")
+    ax.set_title(
+        f"Structure-from-Motion: {rec.num_reg_images()} cameras, {rec.num_points3D()} points"
+    )
     ax.legend()
     fig.savefig(OUT_DIR / "step3_cameras.png", dpi=130, bbox_inches="tight")
     print("   saved data/sfm/model, outputs/sparse_cloud.ply, outputs/step3_cameras.png")
