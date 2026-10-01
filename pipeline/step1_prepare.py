@@ -13,6 +13,7 @@ What it does:
 
 Run:  .venv/bin/python pipeline/step1_prepare.py
 """
+
 import csv
 import math
 from pathlib import Path
@@ -37,7 +38,7 @@ def dms_to_degrees(dms, ref):
 def read_exif(img):
     exif = img.getexif()
     cam = {TAGS.get(k, k): v for k, v in exif.get_ifd(0x8769).items()}  # camera settings block
-    gps = exif.get_ifd(0x8825)                                         # GPS block
+    gps = exif.get_ifd(0x8825)  # GPS block
     # GPS tag ids: 1=LatRef, 2=Lat, 3=LonRef, 4=Lon, 6=Altitude
     lat = dms_to_degrees(gps[2], gps[1])
     lon = dms_to_degrees(gps[4], gps[3])
@@ -74,13 +75,18 @@ def main():
 
         # File names look like EX-01-10917_0285_0030.jpg -> flight "0285"
         flight = path.stem.split("_")[1]
-        rows.append({
-            "name": path.name,
-            "flight": flight,
-            "lat": lat, "lon": lon, "alt": alt,
-            "width": small.width, "height": small.height,
-            "focal_px": f_full * scale,   # focal length scales with the image
-        })
+        rows.append(
+            {
+                "name": path.name,
+                "flight": flight,
+                "lat": lat,
+                "lon": lon,
+                "alt": alt,
+                "width": small.width,
+                "height": small.height,
+                "focal_px": f_full * scale,  # focal length scales with the image
+            }
+        )
         print(f"[{i}/{len(raw_files)}] {path.name}  flight={flight}  alt={alt:.1f} m")
 
     with open(META_CSV, "w", newline="") as f:
@@ -90,8 +96,10 @@ def main():
 
     fov = 2 * math.degrees(math.atan(rows[0]["width"] / 2 / rows[0]["focal_px"]))
     print(f"\nDone. {len(rows)} images -> {OUT_DIR}")
-    print(f"Working size {rows[0]['width']}x{rows[0]['height']}, "
-          f"focal {rows[0]['focal_px']:.0f} px, horizontal field of view {fov:.0f} deg")
+    print(
+        f"Working size {rows[0]['width']}x{rows[0]['height']}, "
+        f"focal {rows[0]['focal_px']:.0f} px, horizontal field of view {fov:.0f} deg"
+    )
 
 
 if __name__ == "__main__":
