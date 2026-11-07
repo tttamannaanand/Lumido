@@ -1,0 +1,6 @@
+numpy
+opencv-python-headless
+pillow
+matplotlib
+pytest>=8
+ruff>=0.6
